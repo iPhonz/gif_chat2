@@ -1,8 +1,10 @@
+// Constants and state
 const TENOR_API_KEY = 'YOUR_API_KEY_HERE';
 let selectedGif = null;
 let messageId = 0;
 let messages = [];
 
+// GIF search functionality
 async function searchGifs() {
     const searchTerm = document.getElementById('gifSearch').value;
     const gifContainer = document.getElementById('gifContainer');
@@ -21,13 +23,19 @@ async function searchGifs() {
         });
     } catch (error) {
         console.error('Error fetching GIFs:', error);
+        gifContainer.innerHTML = '<p>Error loading GIFs. Please try again.</p>';
     }
 }
 
 function selectGif(gifUrl) {
     selectedGif = gifUrl;
+    // Visual feedback for selected GIF
+    document.querySelectorAll('.gif-item').forEach(item => {
+        item.style.border = item.querySelector('img').src === gifUrl ? '2px solid #1a73e8' : 'none';
+    });
 }
 
+// Message handling
 function createMessage(text, gifUrl, parentId = null) {
     messageId++;
     return {
@@ -40,10 +48,15 @@ function createMessage(text, gifUrl, parentId = null) {
     };
 }
 
+function formatTimestamp(date) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function addReply(parentId) {
     const messageInput = document.getElementById('messageInput');
     messageInput.placeholder = `Replying to message #${parentId}...`;
     messageInput.dataset.replyTo = parentId;
+    messageInput.focus();
 }
 
 function renderMessage(message, level = 0) {
@@ -51,7 +64,11 @@ function renderMessage(message, level = 0) {
     messageElement.className = 'message';
     messageElement.style.marginLeft = `${level * 20}px`;
     
-    let messageContent = `<div class="message-header">Message #${message.id}</div>`;
+    let messageContent = `
+        <div class="message-header">
+            Message #${message.id} · ${formatTimestamp(message.timestamp)}
+            ${message.parentId ? ` · Reply to #${message.parentId}` : ''}
+        </div>`;
     
     if (message.gifUrl) {
         messageContent += `<img src="${message.gifUrl}" alt="Message GIF">`;
@@ -63,8 +80,12 @@ function renderMessage(message, level = 0) {
     
     messageContent += `
         <div class="message-footer">
-            <button onclick="addReply(${message.id})">Reply</button>
-            ${message.replies.length > 0 ? `<button onclick="toggleReplies(${message.id})">Toggle Replies (${message.replies.length})</button>` : ''}
+            <button onclick="addReply(${message.id})" class="reply-button">Reply</button>
+            ${message.replies.length > 0 ? 
+                `<button onclick="toggleReplies(${message.id})" class="toggle-button">
+                    ${message.replies.length} ${message.replies.length === 1 ? 'Reply' : 'Replies'}
+                </button>` : 
+                ''}
         </div>
         <div class="replies" id="replies-${message.id}">
     `;
@@ -81,7 +102,15 @@ function renderMessage(message, level = 0) {
 
 function toggleReplies(messageId) {
     const repliesContainer = document.getElementById(`replies-${messageId}`);
-    repliesContainer.style.display = repliesContainer.style.display === 'none' ? 'block' : 'none';
+    const isHidden = repliesContainer.style.display === 'none';
+    repliesContainer.style.display = isHidden ? 'block' : 'none';
+    
+    // Update button text
+    const button = repliesContainer.parentElement.querySelector('.toggle-button');
+    const replyCount = repliesContainer.children.length;
+    button.textContent = isHidden ? 
+        `Hide ${replyCount} ${replyCount === 1 ? 'Reply' : 'Replies'}` : 
+        `Show ${replyCount} ${replyCount === 1 ? 'Reply' : 'Replies'}`;
 }
 
 function refreshChat() {
@@ -97,8 +126,7 @@ function refreshChat() {
 
 function sendMessage() {
     const messageInput = document.getElementById('messageInput');
-    const chatContainer = document.getElementById('chatContainer');
-    const text = messageInput.value;
+    const text = messageInput.value.trim();
     const replyToId = messageInput.dataset.replyTo ? parseInt(messageInput.dataset.replyTo) : null;
     
     if (!text && !selectedGif) return;
@@ -106,7 +134,18 @@ function sendMessage() {
     const newMessage = createMessage(text, selectedGif, replyToId);
     
     if (replyToId) {
-        const parentMessage = messages.find(m => m.id === replyToId);
+        const findParentMessage = (messages, parentId) => {
+            for (let message of messages) {
+                if (message.id === parentId) return message;
+                if (message.replies.length > 0) {
+                    const found = findParentMessage(message.replies, parentId);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        
+        const parentMessage = findParentMessage(messages, replyToId);
         if (parentMessage) {
             parentMessage.replies.push(newMessage);
         }
@@ -125,15 +164,17 @@ function sendMessage() {
     refreshChat();
 }
 
-// Listen for Enter key
+// Event listeners
 document.getElementById('messageInput').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         sendMessage();
     }
 });
 
 document.getElementById('gifSearch').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
+        e.preventDefault();
         searchGifs();
     }
 });
